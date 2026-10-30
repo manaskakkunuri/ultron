@@ -2,7 +2,7 @@
 
 **Study smarter. Go further.**
 
-This is a mobile-first, offline-capable PWA. Its app files run from the device’s own loopback server and are not hosted on GitHub. Authentication is required before any protected screen or local workspace data is loaded. The API URL is intentionally blank, so this copy remains on the sign-in screen and sends no OTP, Gemini, Spotify, payment, analytics, or other API requests. No API key is included.
+This is a mobile-first, offline-capable PWA. Its app files run from the device’s own loopback server and are not hosted on GitHub. Authentication is required before any protected screen or local workspace data is loaded. AI study prompts are sent only when the student taps **Ask ULTRON**; the ULTRON API does the model work so low-end phones do not run a local model. Tasks, notes, cards, and focus sessions remain on the device. No API key is included in this app.
 
 ## Run on this Windows device
 
@@ -12,6 +12,8 @@ This is a mobile-first, offline-capable PWA. Its app files run from the device�
 4. Choose **Install ULTRON on this device** in Profile or use the browser menu to install it. After the first load, the app shell is cached for offline use.
 
 The local server listens only on `127.0.0.1`. It serves the files; tasks, cards, notes, focus sessions, streaks, and preferences are saved by the browser on that device in IndexedDB. If IndexedDB is unavailable, the app falls back to browser local storage.
+
+To connect the existing ULTRON API, set its HTTPS base URL in the local server environment before launch. In Windows PowerShell, run `cd outputs/ultron-local`, `$env:ULTRON_API_BASE_URL="https://YOUR-ULTRON-API"`, then `node serve-local.mjs`. On Android Termux, run `export ULTRON_API_BASE_URL="https://YOUR-ULTRON-API"` before `node serve-local.mjs`. The local server injects this URL into the page and adds only that API origin to its Content Security Policy. The API must allow the app origin `http://127.0.0.1:8765` in CORS. Never place an API key in the app or this environment variable.
 
 ## Run on Android
 
@@ -38,6 +40,6 @@ After server-confirmed phone sign-in, tasks, cards, notes, focus sessions, strea
 
 ## Waiting for your API
 
-Phone OTP, account registration and sign-in, Gemini responses, OCR, server-verified quotas/XP, payment review and activation, school portal moderation/chat, parent sync, media generation, and Spotify playback require the API you will provide. These controls currently report that no request was sent. The API contract and seeding requirements are in [API handoff notes](API_HANDOFF.md).
+The existing ULTRON API provides server-side AI answers at `/ai/answer`, which the Study chat uses after a verified API session is available. The current backend supports email/password and Google sign-in, not the requested phone OTP flow; it will need a compatible OTP service before the app can unlock with phone verification. OCR, server-verified quotas/XP, payment review and activation, school portal moderation/chat, parent sync, media generation, and Spotify playback require additional API wiring. The API contract and setup notes are in [API handoff notes](API_HANDOFF.md).
 
 The complimentary lifetime Pro grants and admin roles must be provisioned and enforced by the server. The browser never grants paid plans, admin permissions, XP authority, or cross-school access based on local data.

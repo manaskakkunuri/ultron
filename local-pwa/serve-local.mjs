@@ -6,6 +6,15 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(fileURLToPath(new URL('.', import.meta.url)));
 const port = 8765;
+const configuredApiBase = (process.env.ULTRON_API_BASE_URL || '').trim().replace(/\/$/, '');
+let apiOrigin = '';
+if (configuredApiBase) {
+  const apiUrl = new URL(configuredApiBase);
+  if ((apiUrl.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(apiUrl.hostname)) || apiUrl.username || apiUrl.password) {
+    throw new Error('ULTRON_API_BASE_URL must be an HTTPS URL without embedded credentials.');
+  }
+  apiOrigin = apiUrl.origin;
+}
 const mime = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.webmanifest': 'application/manifest+json',
@@ -25,14 +34,23 @@ const server = createServer(async (request, response) => {
     if (target !== root && !target.startsWith(`${root}${sep}`)) throw new Error('Invalid path');
     const info = await stat(target);
     if (!info.isFile()) throw new Error('Not a file');
-    const bytes = await readFile(target);
+    let bytes = await readFile(target);
+    if (pathname === '/index.html' && configuredApiBase) {
+      const safeBase = configuredApiBase.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;');
+      const html = bytes.toString('utf8').replace(
+        /(<meta\s+name="ultron-api-base-url"\s+content=")[^"]*(">)/i,
+        `$1${safeBase}$2`
+      );
+      bytes = Buffer.from(html, 'utf8');
+    }
+    const connectSources = ["'self'", apiOrigin].filter(Boolean).join(' ');
     response.writeHead(200, {
       'Content-Type': mime[extname(target)] || 'application/octet-stream',
       'Content-Length': bytes.length,
       'Cache-Control': 'no-cache',
       'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'no-referrer',
-      'Content-Security-Policy': "default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+      'Content-Security-Policy': `default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src ${connectSources}; media-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'`
     });
     response.end(request.method === 'HEAD' ? undefined : bytes);
   } catch {

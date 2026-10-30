@@ -1,8 +1,15 @@
 # ULTRON API handoff notes
 
-The local app is deliberately disconnected until the API is provided. A key was pasted into chat; treat it as exposed and rotate or revoke it before use. Do not add its replacement or any provider key to `index.html`, `app.js`, the manifest, a mobile package, or browser storage. Keep secrets and authority in the server environment.
+The local app is wired to the existing ULTRON API's server-side AI route. A key was pasted into chat; treat it as exposed and rotate or revoke it before use. Do not add its replacement or any provider key to `index.html`, `app.js`, the manifest, a mobile package, or browser storage. Keep secrets and authority in the server environment.
 
-The client expects its HTTPS API origin in the empty `ultron-api-base-url` meta tag. Configure strict CORS for the exact app origin. Add only that API origin to the local static server's `connect-src` policy; never use a client API key.
+Set `ULTRON_API_BASE_URL` in the environment before starting `serve-local.mjs`. The local server injects it into the `ultron-api-base-url` meta tag and adds only its origin to the CSP `connect-src`. Use the HTTPS origin of the existing ULTRON API and configure CORS for `http://127.0.0.1:8765` (and `http://localhost:8765` only if users launch that host). Never use a client API key.
+
+## Low-end device path
+
+- The browser submits only a student's explicit Study chat prompt to `POST /ai/answer`, with the authenticated bearer token and a small `{prompt, mode}` JSON body. The backend does model inference; the phone does not load a local model or send images for this feature.
+- The existing backend returns `{answer, provider, elapsed_ms, usage}`. The client renders the text answer and does not retry automatically, limiting duplicate requests and surprise usage.
+- Tasks, cards, notes, timer, whiteboard, and preferences remain local. The app automatically reduces blur, animation, shadow, and canvas pixel ratio on data-saver or lower-memory/CPU devices.
+- The API base URL and token are never saved in IndexedDB. The base URL is injected at launch; the access token stays in memory.
 
 ## Identity and phone OTP
 
@@ -11,6 +18,7 @@ The client expects its HTTPS API origin in the empty `ultron-api-base-url` meta 
 - `POST /auth/phone/start` accepts an E.164 `phone_number` and `purpose` and returns a generic message plus `challenge_id` after server-side SMS dispatch.
 - `POST /auth/phone/verify` accepts the phone, code, password, challenge ID, and purpose. Return an `access_token` and safe `user` object only after the code and credentials are verified.
 - `POST /auth/register` accepts the required academic fields, email, password, phone, code, and challenge ID. Create the account only after phone verification and return a verified session only after all checks pass.
+- The existing `manaskakkunuri.github.io` backend does **not** currently implement `/auth/phone/start`, `/auth/phone/verify`, or phone-based registration. Its `/auth/register` expects only email, display name, and password, and its `/auth/login` expects email and password. It also has `/auth/google`. Keep the app locked until the backend gains the requested phone OTP routes or the user explicitly changes the phone-OTP requirement; do not invent a client-side bypass.
 - The client keeps every protected screen locked until it receives both `access_token` and `user`. No offline/demo bypass is included. Reload requires fresh sign-in until a secure session refresh endpoint is supplied.
 - Use HTTPS, strict origin allowlists, short-lived access tokens, HTTP-only secure refresh cookies, refresh-token rotation, revocation, and rate limits. The app must not save passwords, OTPs, or refresh tokens locally.
 - Server responses, not client profile fields, determine verified email, roles, school tenant, plan, quotas, XP, and complimentary access.

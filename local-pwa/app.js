@@ -38,6 +38,11 @@
   let toastTimer = null;
   let deferredInstall = null;
   const AUTH_API_BASE = (document.querySelector('meta[name="ultron-api-base-url"]')?.content || '').trim().replace(/\/$/, '');
+  const isLowEndDevice = Boolean(
+    navigator.connection?.saveData ||
+    (Number(navigator.deviceMemory) > 0 && Number(navigator.deviceMemory) <= 4) ||
+    (Number(navigator.hardwareConcurrency) > 0 && Number(navigator.hardwareConcurrency) <= 4)
+  );
   let authToken = null;
   let authUser = null;
   let localDataLoaded = false;
@@ -344,7 +349,7 @@
   }
   function drawSavedBoard() {
     const canvas = $('#whiteboard'); const ctx = canvas.getContext('2d');
-    const ratio = window.devicePixelRatio || 1; const rect = canvas.getBoundingClientRect();
+    const ratio = isLowEndDevice ? 1 : Math.min(window.devicePixelRatio || 1, 2); const rect = canvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
     canvas.width = Math.round(rect.width * ratio); canvas.height = Math.round(rect.height * ratio); ctx.scale(ratio, ratio); ctx.fillStyle = '#f8fafc'; ctx.fillRect(0, 0, rect.width, rect.height);
     if (!state.board) return;
@@ -478,13 +483,37 @@
     showAuthView('login'); window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  function saveStudyPrompt(event) {
+  async function saveStudyPrompt(event) {
     event.preventDefault();
     const prompt = $('#chatInput').value.trim(); if (!prompt) return;
-    state.prompts.push({ id: id(), prompt, mode: $('#chatMode').value, createdAt: new Date().toISOString() });
-    saveState();
-    $('#chatFeed').insertAdjacentHTML('beforeend', `<div class="chat-message">${safe(prompt)}<small>Saved offline · waiting for API</small></div>`);
-    $('#chatInput').value = ''; toast('Prompt saved locally. No Gemini API call was made.');
+    const selectedMode = $('#chatMode').value;
+    state.prompts.push({ id: id(), prompt, mode: selectedMode, createdAt: new Date().toISOString() });
+    await saveState();
+    $('#chatFeed').insertAdjacentHTML('beforeend', `<div class="chat-message">${safe(prompt)}<small>${AUTH_API_BASE && authToken ? 'Sent to ULTRON API for server-side processing' : 'Saved on this device · API not connected'}</small></div>`);
+    $('#chatInput').value = '';
+    if (!AUTH_API_BASE || !authToken) { toast('Saved on this device. Connect the ULTRON API to get an AI answer.'); return; }
+    const sendButton = $('#chatForm button[type="submit"]');
+    sendButton.disabled = true;
+    const pending = document.createElement('div'); pending.className = 'chat-message ai-message'; pending.textContent = 'ULTRON is thinking…'; pending.setAttribute('aria-live', 'polite');
+    $('#chatFeed').append(pending); pending.scrollIntoView({ block: 'nearest' });
+    const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 25000);
+    try {
+      const apiMode = ({ explain: 'doubt', homework: 'homework', summary: 'summary', exam: 'doubt' })[selectedMode] || 'doubt';
+      const response = await fetch(`${AUTH_API_BASE}/ai/answer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ prompt, mode: apiMode }), signal: controller.signal
+      });
+      const result = await response.json().catch(() => ({}));
+      if (response.status === 401) { pending.remove(); $('#gateStatus').textContent = 'Your session expired. Sign in again to continue.'; await signOut(); return; }
+      if (!response.ok) throw new Error(result.detail || 'The ULTRON API could not answer. Your prompt is still saved on this device.');
+      if (typeof result.answer !== 'string' || !result.answer.trim()) throw new Error('The ULTRON API returned an empty answer. Your prompt is still saved on this device.');
+      pending.classList.add('ai-message'); pending.textContent = result.answer; pending.scrollIntoView({ block: 'nearest' });
+    } catch (error) {
+      pending.remove();
+      const message = error.name === 'AbortError' ? 'The server took too long. Your prompt is saved locally; try again when the connection is better.' : error.message;
+      $('#chatFeed').insertAdjacentHTML('beforeend', `<div class="chat-message ai-message">${safe(message)}</div>`);
+    } finally { clearTimeout(timeout); sendButton.disabled = false; }
   }
   function selectPhoto(file) {
     if (!file) return;
@@ -574,6 +603,7 @@
   $('#copyUpi').addEventListener('click', copyUpi);
   $('#paymentPlan').addEventListener('change', renderClaims);
   initBoard(); renderClaims(); updateConnection();
+  if (isLowEndDevice) document.body.classList.add('low-end-device');
   $('#protectedApp').classList.add('hidden'); $('#authGate').classList.remove('hidden'); showAuthView('login');
 
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
